@@ -1,39 +1,60 @@
-// backend/index.js
+// ================================================
+// EcoSort Commander Backend - Production Build
+// ================================================
+
+// 1️⃣ Load Environment Variables
 import dotenv from "dotenv";
 dotenv.config();
 
+// 2️⃣ Core Dependencies
 import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 
-// Import database helpers (ESM-compatible)
+// 3️⃣ Database helpers
 import { connectPostgres, connectMongo, getPostgres, getMongo } from "./src/db.js";
 
-// Import MQTT client — support both CommonJS and ESM exports
+// 4️⃣ MQTT Client (handles both ESM and CommonJS export styles)
 import * as mqttClientModule from "./src/mqttClient.js";
 const connectMqtt =
   mqttClientModule.connectMqtt || mqttClientModule.default?.connectMqtt;
 const sendCommand =
   mqttClientModule.sendCommand || mqttClientModule.default?.sendCommand;
 
+// 5️⃣ Express App Setup
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
+const NODE_ENV = process.env.NODE_ENV || "development";
 
 app.use(express.json());
+app.use(helmet()); // security headers
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
-// ----------------------------------------------------
-// Root route
-// ----------------------------------------------------
+// ================================================
+//  Routes
+// ================================================
+
+// Root
 app.get("/", (req, res) => {
-  res.send("EcoSort Commander backend is running successfully 🚀");
+  res.send("🌱 EcoSort Commander backend is running successfully!");
 });
 
-// ----------------------------------------------------
-// Health check route
-// ----------------------------------------------------
+// Health check (with version, uptime, and environment)
 app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    uptime: process.uptime(),
-    ts: new Date().toISOString(),
+  res.status(200).json({
+    status: "ok",
+    service: "ecosort-backend",
+    version: "1.0.0",
+    uptime_seconds: process.uptime(),
+    timestamp: new Date().toISOString(),
+    environment: NODE_ENV,
   });
 });
 
@@ -46,6 +67,7 @@ app.get("/test-postgres", async (req, res) => {
     const out = await pg.query("SELECT NOW()");
     res.json({ postgres_time: out.rows[0].now });
   } catch (err) {
+    console.error("[Postgres] Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -65,6 +87,7 @@ app.get("/test-mongo", async (req, res) => {
     const doc = await col.findOne({ _id: "heartbeat" });
     res.json({ mongo_heartbeat: doc });
   } catch (err) {
+    console.error("[MongoDB] Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -83,6 +106,7 @@ app.get("/api/robots", async (req, res) => {
       .toArray();
     res.json(robots);
   } catch (err) {
+    console.error("[Robots] Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -96,6 +120,7 @@ app.post("/api/robot/:id/command", (req, res) => {
 
   if (typeof sendCommand === "function") {
     sendCommand(robotId, command);
+    console.log(`📡 Command sent to ${robotId}:`, command);
   } else {
     console.warn("⚠️ sendCommand is not defined — check mqttClient.js exports.");
   }
@@ -103,18 +128,28 @@ app.post("/api/robot/:id/command", (req, res) => {
   res.json({ ok: true, robotId, command });
 });
 
-// ----------------------------------------------------
-// Start server + connect services
-// ----------------------------------------------------
+// ================================================
+//  Startup Logic
+// ================================================
 app.listen(PORT, async () => {
-  console.log(`🚀 Server started on port ${PORT}`);
+  console.log("===============================================");
+  console.log(`🚀 EcoSort Backend Live on Port ${PORT}`);
+  console.log(`🌍 Environment: ${NODE_ENV}`);
+  console.log("===============================================");
+
   try {
+    console.log("🔗 Connecting to Postgres...");
     await connectPostgres();
+    console.log("✅ Postgres connected.");
+
+    console.log("🔗 Connecting to MongoDB...");
     await connectMongo();
+    console.log("✅ MongoDB connected.");
 
     if (typeof connectMqtt === "function") {
+      console.log("🔗 Connecting to MQTT broker...");
       connectMqtt();
-      console.log("📡 MQTT connection initialized.");
+      console.log("✅ MQTT connection initialized.");
     } else {
       console.warn("⚠️ connectMqtt not found — skipping MQTT init.");
     }
