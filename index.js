@@ -8,11 +8,8 @@ dotenv.config();
 import express from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-
-import { connectPostgres, connectMongo, getPostgres, getMongo } from "./src/db.js";
-
-// ✅ Import the JWT middleware
 import { requireAuth } from "./src/middlewares/authMiddleware.js";
+import { connectPostgres, connectMongo, getPostgres, getMongo } from "./src/db.js";
 
 // MQTT Client (handles both ESM and CommonJS export styles)
 import * as mqttClientModule from "./src/mqttClient.js";
@@ -67,7 +64,8 @@ app.get("/api/health", (req, res) => {
 app.get("/api/analytics/private", requireAuth, async (req, res) => {
   res.json({
     ok: true,
-    message: "Private analytics data",
+    message: "Private analytics data available.",
     user: req.user,
+    timestamp: new Date().toISOString(),
   });
 });
