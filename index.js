@@ -166,10 +166,22 @@ app.listen(PORT, "0.0.0.0", async () => {
     await connectMongo();
     console.log("✅ MongoDB connected.");
 
+    // ---- MQTT + Telemetry setup ----
+    const connectMqtt =
+      mqttClientModule.connectMqtt || mqttClientModule.default?.connectMqtt;
+    const subscribeTelemetry =
+      mqttClientModule.subscribeTelemetry ||
+      mqttClientModule.default?.subscribeTelemetry;
+
     if (typeof connectMqtt === "function") {
       console.log("🔗 Connecting to MQTT broker...");
       connectMqtt();
       console.log("✅ MQTT connection initialized.");
+
+      if (typeof subscribeTelemetry === "function") {
+        subscribeTelemetry();
+        console.log("📡 Telemetry subscription active.");
+      }
     } else {
       console.warn("⚠️ connectMqtt not found — skipping MQTT init.");
     }
