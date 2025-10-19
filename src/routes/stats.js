@@ -1,6 +1,6 @@
 // ===============================================
 // src/routes/stats.js
-// Analytics API for EcoSort Commander
+// Analytics API for EcoSort Commander (Fixed version)
 // ===============================================
 
 import express from "express";
@@ -8,37 +8,36 @@ import { getPostgres, getMongo } from "../db.js";
 
 const router = express.Router();
 
-/** Utility: parse from/to window (defaults to 24 h). */
 function parseWindow(q) {
   const to = q.to ? new Date(q.to) : new Date();
   const from = q.from
     ? new Date(q.from)
     : new Date(to.getTime() - 24 * 60 * 60 * 1000);
   if (isNaN(from.getTime()) || isNaN(to.getTime())) {
-    throw new Error("Invalid from/to format. Use ISO 8601 timestamps.");
+    throw new Error("Invalid from/to format. Use ISO timestamps.");
   }
   return { from, to };
 }
 
-/**
- * GET /api/stats/overview?from=&to=
- * Returns overall stats and per-robot summaries.
- */
+// ------------------------------------------------------------
+// GET /api/stats/overview
+// ------------------------------------------------------------
 router.get("/overview", async (req, res) => {
   try {
     const { from, to } = parseWindow(req.query);
     const pg = getPostgres();
 
+    // Fixed: renamed CTE from 'window' to 'time_window'
     const { rows } = await pg.query(
       `
-      WITH window AS (
+      WITH time_window AS (
         SELECT $1::timestamptz AS from_ts, $2::timestamptz AS to_ts
       ),
       series AS (
         SELECT robot_id, bucket_ts, last_sorted_count, last_battery
         FROM robot_stats_minute
-        WHERE bucket_ts BETWEEN (SELECT from_ts FROM window)
-                            AND (SELECT to_ts FROM window)
+        WHERE bucket_ts BETWEEN (SELECT from_ts FROM time_window)
+                            AND (SELECT to_ts FROM time_window)
       ),
       per_robot AS (
         SELECT
@@ -73,7 +72,6 @@ router.get("/overview", async (req, res) => {
       per_robot: [],
     };
 
-    // Mongo: latest snapshot per robot
     const db = getMongo();
     const latest = await db
       .collection("telemetry")
@@ -116,14 +114,13 @@ router.get("/overview", async (req, res) => {
   }
 });
 
-/**
- * GET /api/stats/robot/:id?from=&to=
- * Returns per-robot time series.
- */
+// ------------------------------------------------------------
+// GET /api/stats/robot/:id
+// ------------------------------------------------------------
 router.get("/robot/:id", async (req, res) => {
   try {
     const robotId = req.params.id;
-    if (!robotId) throw new Error("Missing robot id");
+    if (!robotId) throw new Error("Missing robot id.");
 
     const { from, to } = parseWindow(req.query);
     const pg = getPostgres();
@@ -139,7 +136,6 @@ router.get("/robot/:id", async (req, res) => {
       [robotId, from.toISOString(), to.toISOString()]
     );
 
-    // Diff to compute items per minute
     const points = [];
     let prev = null;
     for (const r of rows) {
@@ -159,18 +155,18 @@ router.get("/robot/:id", async (req, res) => {
       prev = { sorted };
     }
 
-    // Summary
+    // Fixed: renamed 'window' to 'time_window'
     const { rows: sRows } = await pg.query(
       `
-      WITH window AS (
+      WITH time_window AS (
         SELECT $2::timestamptz AS from_ts, $3::timestamptz AS to_ts
       ),
       series AS (
         SELECT bucket_ts, last_sorted_count, last_battery
         FROM robot_stats_minute
         WHERE robot_id = $1
-          AND bucket_ts BETWEEN (SELECT from_ts FROM window)
-                           AND (SELECT to_ts FROM window)
+          AND bucket_ts BETWEEN (SELECT from_ts FROM time_window)
+                           AND (SELECT to_ts FROM time_window)
       )
       SELECT
         COALESCE(MAX(last_sorted_count) - MIN(last_sorted_count), 0)::int AS items_sorted,
