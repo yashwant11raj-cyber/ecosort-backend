@@ -1,56 +1,60 @@
 // src/mqttClient.js
 import mqtt from "mqtt";
-import { supabase } from "./app.js";
-import RobotTelemetry from "./models/RobotTelemetry.js";
 
-const client = mqtt.connect(process.env.MQTT_BROKER_URL, {
-  username: process.env.MQTT_USERNAME,
-  password: process.env.MQTT_PASSWORD,
-  reconnectPeriod: 2000,
-});
+const brokerUrl = process.env.MQTT_BROKER_URL || "mqtt://test.mosquitto.org:1883";
+const username = process.env.MQTT_USERNAME || "";
+const password = process.env.MQTT_PASSWORD || "";
 
-client.on("connect", () => {
-  console.log("✅ MQTT connected");
-  client.subscribe("ecosort/robot/+/status");
-});
+// Create a reusable client connection
+export let mqttClient = null;
 
-client.on("reconnect", () => console.log("♻️ MQTT reconnecting..."));
-client.on("error", (err) => console.error("❌ MQTT connection error:", err.message));
+// Function to connect to the broker
+export function connectMqtt() {
+  if (mqttClient) return mqttClient; // reuse if already connected
 
-client.on("message", async (topic, buf) => {
-  try {
-    const payload = JSON.parse(buf.toString());
-    console.log("📩 MQTT data:", payload);
+  console.log("🔗 Connecting to MQTT broker...");
 
-    // Save to MongoDB (if model connected)
-    await RobotTelemetry.create({
-      robot_id: payload.robot_id,
-      status: payload.status,
-      battery_level: payload.battery_level,
-      timestamp: new Date(),
-    });
+  mqttClient = mqtt.connect(brokerUrl, {
+    username,
+    password,
+    reconnectPeriod: 2000, // auto-reconnect every 2s
+  });
 
-    // Sustainability calculation
-    const co2 = (payload.weight || 0) * 1.5;
-    const landfill = (payload.weight || 0) * 0.002;
-    const energy = (payload.weight || 0) * 0.8;
+  mqttClient.on("connect", () => {
+    console.log("✅ MQTT connected");
+  });
 
-    // Insert into Supabase
-    const { error } = await supabase.from("waste_logs").insert([
-      {
-        robot_id: payload.robot_id,
-        weight: payload.weight ?? 0,
-        co2_saved: co2,
-        landfill_saved: landfill,
-        energy_recovered: energy,
-        created_at: new Date().toISOString(),
-      },
-    ]);
-    if (error) console.error("Supabase insert error:", error.message);
-    else console.log("✅ Saved sustainability data to Supabase");
-  } catch (e) {
-    console.error("⚠️ MQTT parse error:", e.message);
+  mqttClient.on("reconnect", () => {
+    console.log("♻️ Reconnecting to MQTT broker...");
+  });
+
+  mqttClient.on("error", (err) => {
+    console.error("❌ MQTT connection error:", err.message);
+  });
+
+  return mqttClient;
+}
+
+// Function to send commands to a robot
+export function sendCommand(robotId, command) {
+  if (!mqttClient) {
+    console.warn("⚠️ MQTT not connected; cannot send command");
+    return;
   }
-});
 
-export default client;
+  const topic = `robots/${robotId}/commands`;
+  const message = JSON.stringify(command);
+
+  mqttClient.publish(topic, message, { qos: 1 }, (err) => {
+    if (err) {
+      console.error("❌ Failed to publish command:", err.message);
+    } else {
+      console.log(`📡 Command sent to ${topic}: ${message}`);
+    }
+  });
+}
+
+// Optionally auto-connect when this module is imported
+connectMqtt();
+
+export default { connectMqtt, sendCommand, mqttClient };
