@@ -23,22 +23,20 @@ const connectMqtt =
 const sendCommand =
   mqttClientModule.sendCommand || mqttClientModule.default?.sendCommand;
 
-// ✅ Import analytics router (Step 2)
+// ✅ Import analytics router
 import statsRouter from "./src/routes/stats.js";
 
 // ----------------------------------------------------
 // Express setup
 // ----------------------------------------------------
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3001; // ✅ Use Render-assigned port
 const NODE_ENV = process.env.NODE_ENV || "development";
 
-// ----------------------------------------------------
-// 🔒 Global security & rate limiting
-// ----------------------------------------------------
 app.use(express.json());
 app.use(helmet());
 
+// ✅ Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -57,12 +55,10 @@ app.use("/api/auth", authLimiter);
 //  Routes
 // ================================================
 
-// Root route
 app.get("/", (req, res) => {
   res.send("🌱 EcoSort Commander backend is running successfully!");
 });
 
-// Health check route
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -88,7 +84,7 @@ app.get("/api/analytics/private", requireAuth, async (req, res) => {
 app.use("/api/stats", statsRouter);
 
 // ----------------------------------------------------
-// Test Postgres connection
+// Database Test Routes
 // ----------------------------------------------------
 app.get("/test-postgres", async (req, res) => {
   try {
@@ -101,9 +97,6 @@ app.get("/test-postgres", async (req, res) => {
   }
 });
 
-// ----------------------------------------------------
-// Test MongoDB connection
-// ----------------------------------------------------
 app.get("/test-mongo", async (req, res) => {
   try {
     const db = getMongo();
@@ -122,7 +115,7 @@ app.get("/test-mongo", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// Recent robot telemetry (legacy test)
+// Legacy robot telemetry endpoint
 // ----------------------------------------------------
 app.get("/api/robots", async (req, res) => {
   try {
@@ -141,7 +134,7 @@ app.get("/api/robots", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// Send command to robot
+// Robot command endpoint
 // ----------------------------------------------------
 app.post("/api/robot/:id/command", (req, res) => {
   const robotId = req.params.id;
@@ -151,14 +144,14 @@ app.post("/api/robot/:id/command", (req, res) => {
     sendCommand(robotId, command);
     console.log(`📡 Command sent to ${robotId}:`, command);
   } else {
-    console.warn("⚠️ sendCommand is not defined — check mqttClient.js exports.");
+    console.warn("⚠️ sendCommand not defined — check mqttClient.js exports.");
   }
 
   res.json({ ok: true, robotId, command });
 });
 
 // ================================================
-//  Startup Logic
+//  Startup
 // ================================================
 app.listen(PORT, "0.0.0.0", async () => {
   console.log("===============================================");
@@ -175,23 +168,10 @@ app.listen(PORT, "0.0.0.0", async () => {
     await connectMongo();
     console.log("✅ MongoDB connected.");
 
-    const connectMqtt =
-      mqttClientModule.connectMqtt || mqttClientModule.default?.connectMqtt;
-    const subscribeTelemetry =
-      mqttClientModule.subscribeTelemetry ||
-      mqttClientModule.default?.subscribeTelemetry;
-
     if (typeof connectMqtt === "function") {
       console.log("🔗 Connecting to MQTT broker...");
       connectMqtt();
-      console.log("✅ MQTT connection initialized.");
-
-      if (typeof subscribeTelemetry === "function") {
-        subscribeTelemetry();
-        console.log("📡 Telemetry subscription active.");
-      }
-    } else {
-      console.warn("⚠️ connectMqtt not found — skipping MQTT init.");
+      console.log("✅ MQTT connected.");
     }
   } catch (e) {
     console.error("❌ Startup error:", e.message);
