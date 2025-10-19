@@ -3,24 +3,32 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
+
+// Import database helpers (ESM-compatible)
 import { connectPostgres, connectMongo, getPostgres, getMongo } from "./src/db.js";
-import { connectMqtt, sendCommand } from "./src/mqttClient.js"; // ✅ ESM import
+
+// Import MQTT client — support both CommonJS and ESM exports
+import * as mqttClientModule from "./src/mqttClient.js";
+const connectMqtt =
+  mqttClientModule.connectMqtt || mqttClientModule.default?.connectMqtt;
+const sendCommand =
+  mqttClientModule.sendCommand || mqttClientModule.default?.sendCommand;
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
 
-app.use(express.json()); // ✅ enable JSON parsing globally
+app.use(express.json());
 
-// --------------------------------------------
+// ----------------------------------------------------
 // Root route
-// --------------------------------------------
+// ----------------------------------------------------
 app.get("/", (req, res) => {
-  res.send("EcoSort Commander backend is running!");
+  res.send("EcoSort Commander backend is running successfully 🚀");
 });
 
-// --------------------------------------------
+// ----------------------------------------------------
 // Health check route
-// --------------------------------------------
+// ----------------------------------------------------
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
@@ -29,9 +37,9 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// --------------------------------------------
+// ----------------------------------------------------
 // Test Postgres
-// --------------------------------------------
+// ----------------------------------------------------
 app.get("/test-postgres", async (req, res) => {
   try {
     const pg = getPostgres();
@@ -42,9 +50,9 @@ app.get("/test-postgres", async (req, res) => {
   }
 });
 
-// --------------------------------------------
+// ----------------------------------------------------
 // Test MongoDB
-// --------------------------------------------
+// ----------------------------------------------------
 app.get("/test-mongo", async (req, res) => {
   try {
     const db = getMongo();
@@ -61,9 +69,9 @@ app.get("/test-mongo", async (req, res) => {
   }
 });
 
-// --------------------------------------------
-// Return recent robot telemetry
-// --------------------------------------------
+// ----------------------------------------------------
+// Recent robot telemetry
+// ----------------------------------------------------
 app.get("/api/robots", async (req, res) => {
   try {
     const db = getMongo();
@@ -79,26 +87,37 @@ app.get("/api/robots", async (req, res) => {
   }
 });
 
-// --------------------------------------------
+// ----------------------------------------------------
 // Send command to robot
-// --------------------------------------------
+// ----------------------------------------------------
 app.post("/api/robot/:id/command", (req, res) => {
   const robotId = req.params.id;
   const command = req.body;
 
-  sendCommand(robotId, command);
+  if (typeof sendCommand === "function") {
+    sendCommand(robotId, command);
+  } else {
+    console.warn("⚠️ sendCommand is not defined — check mqttClient.js exports.");
+  }
+
   res.json({ ok: true, robotId, command });
 });
 
-// --------------------------------------------
+// ----------------------------------------------------
 // Start server + connect services
-// --------------------------------------------
+// ----------------------------------------------------
 app.listen(PORT, async () => {
   console.log(`🚀 Server started on port ${PORT}`);
   try {
     await connectPostgres();
     await connectMongo();
-    connectMqtt(); // ✅ start MQTT once server is ready
+
+    if (typeof connectMqtt === "function") {
+      connectMqtt();
+      console.log("📡 MQTT connection initialized.");
+    } else {
+      console.warn("⚠️ connectMqtt not found — skipping MQTT init.");
+    }
   } catch (e) {
     console.error("❌ Startup error:", e.message);
   }
