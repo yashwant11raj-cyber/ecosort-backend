@@ -9,7 +9,12 @@ import express from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { requireAuth } from "./src/middlewares/authMiddleware.js";
-import { connectPostgres, connectMongo, getPostgres, getMongo } from "./src/db.js";
+import {
+  connectPostgres,
+  connectMongo,
+  getPostgres,
+  getMongo,
+} from "./src/db.js";
 
 // MQTT Client (handles both ESM and CommonJS export styles)
 import * as mqttClientModule from "./src/mqttClient.js";
@@ -18,11 +23,14 @@ const connectMqtt =
 const sendCommand =
   mqttClientModule.sendCommand || mqttClientModule.default?.sendCommand;
 
+// ✅ Import analytics router (Step 2)
+import statsRouter from "./src/routes/stats.js";
+
 // ----------------------------------------------------
 // Express setup
 // ----------------------------------------------------
 const app = express();
-const PORT = process.env.PORT || 3001; // ✅ Let Render assign the port dynamically
+const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 
 // ----------------------------------------------------
@@ -31,16 +39,14 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 app.use(express.json());
 app.use(helmet());
 
-// General rate limit for all routes
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15-minute window
-  max: 100, // each IP can make 100 requests
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use(limiter);
 
-// Optional stricter limiter only for /api/auth
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -68,7 +74,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Example protected route (JWT required)
+// Example protected route
 app.get("/api/analytics/private", requireAuth, async (req, res) => {
   res.json({
     ok: true,
@@ -77,6 +83,9 @@ app.get("/api/analytics/private", requireAuth, async (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// ✅ Mount analytics endpoints
+app.use("/api/stats", statsRouter);
 
 // ----------------------------------------------------
 // Test Postgres connection
@@ -113,7 +122,7 @@ app.get("/test-mongo", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// Recent robot telemetry
+// Recent robot telemetry (legacy test)
 // ----------------------------------------------------
 app.get("/api/robots", async (req, res) => {
   try {
@@ -166,7 +175,6 @@ app.listen(PORT, "0.0.0.0", async () => {
     await connectMongo();
     console.log("✅ MongoDB connected.");
 
-    // ---- MQTT + Telemetry setup ----
     const connectMqtt =
       mqttClientModule.connectMqtt || mqttClientModule.default?.connectMqtt;
     const subscribeTelemetry =
